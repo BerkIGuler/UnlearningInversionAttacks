@@ -1,0 +1,5 @@
+To Install Requirements if not done so:
+pip install -r requirements.txt
+
+Command to run to train model (from source directory)
+python -m scripts.train
