@@ -15,14 +15,21 @@ def get_transforms(augment=False, normalize=True):
         base_transform += [transforms.Normalize(cifar10_mean, cifar10_std)]
     return transforms.Compose(base_transform)
 
-def load_cifar10(data_path='./data', batch_size=128, public_split=0.8, augment=True):
+def load_cifar10(data_path='./data', batch_size=128, public_split=0.8, augment=True, seed=233, exclude_class=None, exclude_prop=0.0):
     """
-    Load CIFAR-10 dataset and split it into D0 (public) and Du (private).
-    
+    Load CIFAR-10 dataset and split into:
+    - D0: public training data
+    - Du: private fine-tuning data
+    - DuX: Du minus excluded subset X
+    - X: excluded subset (used in attack evaluation)
+    - test_loader: CIFAR-10 test data
+
+    Args:
+        excluded_class (int): class label i to remove from Du
+        excluded_fraction (float): fraction pi of class-i to exclude
+
     Returns:
-        D0_loader: DataLoader for public training data
-        Du_loader: DataLoader for private fine-tuning data
-        test_loader: DataLoader for test data
+        D0_loader, Du_loader, DuX_loader, X_loader, test_loader
     """
     # Train and test transforms
     transform_train = get_transforms(augment=augment)
@@ -33,22 +40,38 @@ def load_cifar10(data_path='./data', batch_size=128, public_split=0.8, augment=T
     full_train = datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform_train)
     test_set = datasets.CIFAR10(root=data_path, train=False, download=True, transform=transform_test)
 
-    # Split into D0 and Du
+    # Get sizes to split D0 and Du
     total_len  = len(full_train)
-    
-    #set the size of D0 (set by public_split in parameters) and Du
     D0_len = int(public_split * total_len)
     Du_len = total_len - D0_len
 
     #split the full_train dataset into D0 and Du
-    #set the seed to 42
-    generator = torch.Generator().manual_seed(233)
+    generator = torch.Generator().manual_seed(seed)
     D0, Du = random_split(full_train, [D0_len, Du_len], generator=generator)
 
+    #create loaders
     D0_loader = DataLoader(D0, batch_size=batch_size, shuffle=True, num_workers=2)
     Du_loader = DataLoader(Du, batch_size=batch_size, shuffle=True, num_workers=2)
-
-    #Grab the CIFAR-10 test dataset and create a DataLoader
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
 
-    return D0_loader, Du_loader, test_loader
+    DuX_loader = None
+    X_loader = None
+
+    # Subsample Du into DuX and X
+    if exclude_class is not None and exclude_prop > 0:
+        Du_targets = [Du.dataset[Du.indices[i]][1] for i in range(len(Du))]
+        class_indices = [i for i, label in enumerate(Du_targets) if label == exclude_class]
+
+        exclude_count = int(len(class_indices) * exclude_prop)
+        excluded_indices = set(class_indices[:exclude_count])  # pick top pi% of class-i
+
+        DuX_indices = [i for i in range(len(Du)) if i not in excluded_indices]
+        X_indices = [i for i in range(len(Du)) if i in excluded_indices]
+
+        DuX = torch.utils.data.Subset(Du, DuX_indices)
+        X = torch.utils.data.Subset(Du, X_indices)
+
+        DuX_loader = DataLoader(DuX, batch_size=batch_size, shuffle=True, num_workers=2)
+        X_loader = DataLoader(X, batch_size=batch_size, shuffle=False, num_workers=2)
+
+    return D0_loader, Du_loader, DuX_loader, X_loader, test_loader
