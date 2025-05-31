@@ -6,7 +6,7 @@ import torch
 
 from src.training.trainer import ModelTrainer
 from src.training.data_loader import load_cifar10
-from src.training.utils import set_random_seed  # Create this file or add inline
+from src.training.utils import set_random_seed
 
 def load_config(path="configs/training_config.yaml"):
     with open(path, "r") as f:
@@ -19,12 +19,16 @@ def main():
     set_random_seed(seed)
 
     # Load CIFAR-10
-    D0_loader, Du_loader, test_loader = load_cifar10(
+    D0_loader, Du_loader, DuX_loader, X_loader, test_loader = load_cifar10(
         data_path=config["data"]["path"],
         batch_size=config["train"]["batch_size"],
         public_split=config["data"]["public_split"],
-        augment=config["data"]["augment"]
+        augment=config["data"]["augment"],
+        seed=seed,
+        excluded_class=config["data"]["class"],
+        excluded_fraction=config["data"]["proportion"]
     )
+
 
     # Create trainer
     trainer = ModelTrainer(config)
@@ -46,7 +50,7 @@ def main():
         lr=config["fine_tune"]["lr"]
     )
     trainer.save_model("theta.pth")
-    print("✅ Saved fine-tuned model (θ)")
+    print("Saved fine-tuned model (θ)")
 
 if __name__ == "__main__":
     main()
