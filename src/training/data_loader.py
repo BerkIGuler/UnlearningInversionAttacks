@@ -46,13 +46,6 @@ def load_cifar10(
             - DuX_loader (DataLoader or None): Du minus excluded samples, or None if no exclusion
             - X_loader (DataLoader or None): Excluded samples for attack evaluation, or None if no exclusion
             - test_loader (DataLoader): CIFAR-10 test data loader
-
-    Example:
-        >>> # Basic usage - just split into public/private
-        >>> D0, Du, _, _, test = load_cifar10(public_split=0.7)
-        >>>
-        >>> # Unlearning setup - exclude 10% of class 0 samples
-        >>> D0, Du, DuX, X, test = load_cifar10(exclude_class=0, exclude_prop=0.1)
     """
     # Train and test transforms
     transform_train = get_transforms(augment=augment)
@@ -80,11 +73,11 @@ def load_cifar10(
     X_loader = None
 
     # Subsample Du into DuX and X
-    if excluded_class is not None and excluded_proportion > 0:
+    if exclude_class is not None and exclude_prop > 0:
         Du_targets = [Du.dataset[Du.indices[i]][1] for i in range(len(Du))]
-        class_indices = [i for i, label in enumerate(Du_targets) if label == excluded_class]
+        class_indices = [i for i, label in enumerate(Du_targets) if label == exclude_class]
 
-        exclude_count = int(len(class_indices) * excluded_proportion)
+        exclude_count = int(len(class_indices) * exclude_prop)
         excluded_indices = set(class_indices[:exclude_count])  # pick top pi% of class-i
 
         DuX_indices = [i for i in range(len(Du)) if i not in excluded_indices]

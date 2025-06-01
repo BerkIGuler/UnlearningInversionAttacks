@@ -3,7 +3,7 @@ seed: 233
 data:
   path: "./data"
   public_split: 0.8
-  augment: true
+  augment: false
   class: 0
   proportion: 0.1
 

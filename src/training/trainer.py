@@ -19,7 +19,8 @@ class ModelTrainer:
         optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
 
         if scheduler:
-            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
+            scheduler = torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=1, end_factor=0.01, total_iters=self.config["train"]["epochs"])
 
         self.model.train()
         for epoch in range(epochs):

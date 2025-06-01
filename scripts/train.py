@@ -6,7 +6,7 @@ from src.training.trainer import ModelTrainer
 from src.training.data_loader import load_cifar10
 from src.training.utils import set_random_seed
 
-def load_config(path="configs/debug_config.yaml"):
+def load_config(path="configs/training_config.yaml"):
     with open(path, "r") as f:
         return yaml.safe_load(f)
 
@@ -44,14 +44,14 @@ def main():
     trainer.save_model(os.path.join(config["train"]["model_save_folder"],"pretrained.pth"))
     print("✅ Saved pretrained model")
 
-    # --- Fine-tune on Dᵤ ---
-    trainer.fine_tune_model(
-        train_loader=Du_loader,
-        epochs=config["fine_tune"]["epochs"],
-        lr=config["fine_tune"]["lr"]
-    )
-    trainer.save_model(os.path.join(config["fine_tune"]["model_save_folder"],"theta.pth"))
-    print("Saved fine-tuned model (θ)")
+    # # --- Fine-tune on Dᵤ ---
+    # trainer.fine_tune_model(
+    #     train_loader=Du_loader,
+    #     epochs=config["fine_tune"]["epochs"],
+    #     lr=config["fine_tune"]["lr"]
+    # )
+    # trainer.save_model(os.path.join(config["fine_tune"]["model_save_folder"],"theta.pth"))
+    # print("Saved fine-tuned model (θ)")
 
 if __name__ == "__main__":
     main()
