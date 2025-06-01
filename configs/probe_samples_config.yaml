@@ -1,0 +1,16 @@
+seed: 0
+
+data:
+  img_size: 32
+  channels: 3
+  class_id: 9
+
+model:
+  width: 64
+  num_classes: 10
+  num_channels: 3
+
+fine_tune:
+  device: 'cuda:0'
+  weights_load_path: "outputs/public/pretrained.pth"
+  output_folder: "outputs/probing_samples"
