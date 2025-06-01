@@ -80,11 +80,11 @@ def load_cifar10(
     X_loader = None
 
     # Subsample Du into DuX and X
-    if exclude_class is not None and exclude_prop > 0:
+    if excluded_class is not None and excluded_proportion > 0:
         Du_targets = [Du.dataset[Du.indices[i]][1] for i in range(len(Du))]
-        class_indices = [i for i, label in enumerate(Du_targets) if label == exclude_class]
+        class_indices = [i for i, label in enumerate(Du_targets) if label == excluded_class]
 
-        exclude_count = int(len(class_indices) * exclude_prop)
+        exclude_count = int(len(class_indices) * excluded_proportion)
         excluded_indices = set(class_indices[:exclude_count])  # pick top pi% of class-i
 
         DuX_indices = [i for i in range(len(Du)) if i not in excluded_indices]
