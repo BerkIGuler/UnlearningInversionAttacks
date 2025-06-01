@@ -26,7 +26,7 @@ def main():
         augment=config["data"]["augment"],
         seed=seed,
         excluded_class=config["data"]["class"],
-        excluded_fraction=config["data"]["proportion"]
+        excluded_proportion=config["data"]["proportion"]
     )
 
 
