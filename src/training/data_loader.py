@@ -1,7 +1,6 @@
 import torch
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, random_split, Dataset
-import numpy as np
+from torch.utils.data import DataLoader, random_split
 
 cifar10_mean = (0.4914672374725342, 0.4822617471218109, 0.4467701315879822)
 cifar10_std = (0.24703224003314972, 0.24348513782024384, 0.26158785820007324)
@@ -15,7 +14,10 @@ def get_transforms(augment=False, normalize=True):
         base_transform += [transforms.Normalize(cifar10_mean, cifar10_std)]
     return transforms.Compose(base_transform)
 
-def load_cifar10(data_path='./data', batch_size=128, public_split=0.8, augment=True, seed=233, exclude_class=None, exclude_prop=0.0):
+
+def load_cifar10(
+        data_path='./data', batch_size=128, public_split=0.8,
+        augment=False, seed=233, exclude_class=None, exclude_prop=0.0):
     """
     Load CIFAR-10 dataset and split into:
     - D0: public training data
@@ -25,18 +27,38 @@ def load_cifar10(data_path='./data', batch_size=128, public_split=0.8, augment=T
     - test_loader: CIFAR-10 test data
 
     Args:
-        excluded_class (int): class label i to remove from Du
-        excluded_fraction (float): fraction pi of class-i to exclude
+        data_path (str, optional): Path to store/load CIFAR-10 data. Defaults to './data'.
+        batch_size (int, optional): Batch size for all data loaders. Defaults to 128.
+        public_split (float, optional): Fraction of training data used for D0 (public).
+            Remaining (1 - public_split) used for Du (private). Defaults to 0.8.
+        augment (bool, optional): Whether to apply data augmentation to training data.
+            Defaults to False.
+        seed (int, optional): Random seed for reproducible train/private split. Defaults to 233.
+        exclude_class (int, optional): Class label to remove from Du for unlearning experiments.
+            If None, no exclusion is performed. Defaults to None.
+        exclude_prop (float, optional): Proportion of samples from exclude_class to remove
+            from Du (creates subset X). Must be between 0.0 and 1.0. Defaults to 0.0.
 
     Returns:
-        D0_loader, Du_loader, DuX_loader, X_loader, test_loader
+        tuple: A tuple containing:
+            - D0_loader (DataLoader): Public training data loader
+            - Du_loader (DataLoader): Private fine-tuning data loader
+            - DuX_loader (DataLoader or None): Du minus excluded samples, or None if no exclusion
+            - X_loader (DataLoader or None): Excluded samples for attack evaluation, or None if no exclusion
+            - test_loader (DataLoader): CIFAR-10 test data loader
+
+    Example:
+        >>> # Basic usage - just split into public/private
+        >>> D0, Du, _, _, test = load_cifar10(public_split=0.7)
+        >>>
+        >>> # Unlearning setup - exclude 10% of class 0 samples
+        >>> D0, Du, DuX, X, test = load_cifar10(exclude_class=0, exclude_prop=0.1)
     """
     # Train and test transforms
     transform_train = get_transforms(augment=augment)
     transform_test = get_transforms(augment=False)
 
     # Load the full CIFAR-10 training dataset
-    #download the dataset and apply the transform
     full_train = datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform_train)
     test_set = datasets.CIFAR10(root=data_path, train=False, download=True, transform=transform_test)
 
@@ -58,11 +80,11 @@ def load_cifar10(data_path='./data', batch_size=128, public_split=0.8, augment=T
     X_loader = None
 
     # Subsample Du into DuX and X
-    if exclude_class is not None and exclude_prop > 0:
+    if excluded_class is not None and excluded_proportion > 0:
         Du_targets = [Du.dataset[Du.indices[i]][1] for i in range(len(Du))]
-        class_indices = [i for i, label in enumerate(Du_targets) if label == exclude_class]
+        class_indices = [i for i, label in enumerate(Du_targets) if label == excluded_class]
 
-        exclude_count = int(len(class_indices) * exclude_prop)
+        exclude_count = int(len(class_indices) * excluded_proportion)
         excluded_indices = set(class_indices[:exclude_count])  # pick top pi% of class-i
 
         DuX_indices = [i for i in range(len(Du)) if i not in excluded_indices]

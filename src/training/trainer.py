@@ -7,15 +7,14 @@ from src.training.models import ConvNet
 
 class ModelTrainer:
     def __init__(self, config):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.config = config
-
+        self.device = torch.device(config["train"]["device"] if torch.cuda.is_available() else "cpu")
         self.model = ConvNet(width=config["model"]["width"],
                              num_classes=config["model"]["num_classes"],
                              num_channels=config["model"]["num_channels"]).to(self.device)
 
     def train_model(self, train_loader, epochs, lr, weight_decay, scheduler=True):
-        """Train from scratch on D0. Return trained model."""
+        """Train from scratch. Return trained model."""
         criterion = nn.CrossEntropyLoss()
         optimizer = optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=weight_decay)
 
@@ -43,7 +42,7 @@ class ModelTrainer:
         return self.model
 
     def fine_tune_model(self, train_loader, epochs, lr):
-        """Fine-tune pretrained model on Du."""
+        """Fine-tune pretrained model."""
         return self.train_model(train_loader, epochs=epochs, lr=lr, weight_decay=0, scheduler=False)
 
     def save_model(self, path):
@@ -52,4 +51,3 @@ class ModelTrainer:
     def load_model(self, path):
         self.model.load_state_dict(torch.load(path, map_location=self.device))
         self.model.to(self.device)
-        self.model.eval()
