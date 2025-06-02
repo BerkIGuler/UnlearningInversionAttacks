@@ -1,0 +1,15 @@
+attack:
+  classes: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+  proportion: [0.003, 0.01, 0.1, 0.25, 0.5, 0.9]
+  results_save_folder: "outputs/attack_results"
+  probe_samples_path: "outputs/probing_samples/"
+
+fine_tune:
+  device: "cuda:0"
+  du_weights_load_path: "outputs/private/finetuned_model.pth"
+  dux_weights_load_dir: "outputs/private_unlearned/"
+
+model:
+  width: 64
+  num_classes: 10
+  num_channels: 3
