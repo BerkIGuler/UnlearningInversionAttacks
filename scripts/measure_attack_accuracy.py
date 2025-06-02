@@ -1,178 +1,206 @@
 import pickle
-import sys
-
 import torch
 import numpy as np
 import os
+from pathlib import Path
+from dataclasses import dataclass
+from typing import Dict, List, Tuple
 
 from torchvision import transforms
-
 from src.utils import load_config
 from src.training.trainer import ModelTrainer
 
-cifar10_mean = (0.4914672374725342, 0.4822617471218109, 0.4467701315879822)
-cifar10_std = (0.24703224003314972, 0.24348513782024384, 0.26158785820007324)
+# CIFAR-10 normalization constants
+CIFAR10_MEAN = (0.4914672374725342, 0.4822617471218109, 0.4467701315879822)
+CIFAR10_STD = (0.24703224003314972, 0.24348513782024384, 0.26158785820007324)
 
 
-def predict(model, x):
-    """
-    Returns the probability dist. p(x) where p(x = i) is x being a member of class i
+@dataclass
+class AttackResult:
+    """Represents the result of a single unlearning attack"""
+    target_class_id: int
+    exclude_proportion: float
+    original_confidence: float
+    unlearned_confidence: float
+    confidence_drop: float
+    max_diff_class: int
+    max_diff_value: float
+    attack_success: bool
 
-    Args:
-        model (torch.nn.Module): PyTorch model
-        x (torch.tensor): input tensor
-
-    Returns:
-        pred (np.array): array of probabilities summing to 1
-    """
-    normalizer = transforms.Normalize(cifar10_mean, cifar10_std)
-
-    with torch.no_grad():
-        pred = model(normalizer(x)).softmax(dim=1).detach().cpu().numpy()
-
-    return pred
-
-
-def load_probing_samples(path_to_probe_samples_folder):
-    """
-    Returns a dict containing (class_id, samples) key-value pair for each .pkl file
-
-    Args:
-        path_to_probe_samples_folder (str): directory path containing .pkl files
-
-    Returns:
-        probe_samples_dict (dict): dictionary containing pairs of (class_id, samples)
-            where class_id is an int and samples is a list of torch.Tensor's
-    """
-    probe_samples_files = [item for item in os.listdir(path_to_probe_samples_folder) if item.endswith(".pkl")]
-    probe_samples_dict = {}
-
-    for file in probe_samples_files:
-        underscore_index = file.rfind('_')
-        dot_index = file.rfind('.')
-
-        if underscore_index == -1 or dot_index == -1:
-            raise ValueError(f"file {file} does not follow expected naming convention")
-
-        try:
-            class_id = int(file[underscore_index + 1:dot_index])
-        except ValueError:
-            raise ValueError(f"file {file} does not contain a valid class id")
-
-        file_path = os.path.join(path_to_probe_samples_folder, file)
-        with open(file_path, "rb") as f:
-            samples = pickle.load(f)
-        probe_samples_dict[class_id] = samples
-
-    return probe_samples_dict
+    def __str__(self):
+        status = "SUCCESS" if self.attack_success else "FAILED"
+        return (f"Class {self.target_class_id}, prop {self.exclude_proportion}: {status} "
+                f"(drop: {self.confidence_drop:.4f}, max_diff_class: {self.max_diff_class})")
 
 
-def evaluate_avg_confidence_per_class(trainer, probing_samples):
-    """
-        Returns a dict of pairs of (target_class_id, average_conf_per_class)
+class UnlearningAttackAnalyzer:
+    """Analyzes unlearning attacks by comparing model confidence differences"""
 
-    Args:
-        trainer (ModelTrainer): A trainer class containing model and device as an attribute
-        probing_samples (dict): A dictionary containing pairs of (target_class_id, samples)
-            where target_class_id is an int and samples is a list of torch.Tensor's
+    def __init__(self, config_path: str):
+        self.config = load_config(config_path)
+        self.normalizer = transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD)
+        self.probing_samples = self._load_probing_samples()
 
-    Returns:
-        conf_per_class_dict: A dict of average confidence per classes
-            each key is the int target_class_id of target attack class
-            each value is numpy array of probabilities (averaged over all samples)
-    """
-    trainer.model.eval()
-    conf_per_class_dict = {}
+    def _load_probing_samples(self) -> Dict[int, List[torch.Tensor]]:
+        """Load probing samples from configured directory"""
+        samples_path = Path(self.config["attack"]["probe_samples_path"])
+        samples_dict = {}
 
-    for class_id in sorted(probing_samples.keys()):
-        samples = probing_samples[class_id]
-        predictions = np.array([predict(trainer.model, sample.to(trainer.device)) for sample in samples])
-        average_probs = predictions.mean(axis=0)
-        conf_per_class_dict[class_id] = average_probs
+        for pkl_file in samples_path.glob("*.pkl"):
+            class_id = int(pkl_file.name.replace('.pkl', '').split('_')[-1])
 
-    return conf_per_class_dict
+            with open(pkl_file, "rb") as f:
+                samples = pickle.load(f)
 
+            samples_dict[class_id] = samples
+            print(f"Loaded {len(samples)} samples for class {class_id}")
 
-def report_attack_results(du_confidence_per_class, all_dux_confidences_per_class):
-    """
-    Args:
-        du_confidence_per_class (dict): A dict of pairs of target_class_id, average confidence array
-            du is for the original private model
-        all_dux_confidences_per_class (dict): A dict of pairs of (target_class_id, dict of pairs of (exclude_proportion, dict of pairs of (class_id, average confidence array)))
-            dux is for the unlearned private model where exclude_proportion portion of target_class_id is unlearned.
-    Returns:
-         conf_difference_dict (dict): A dict of pairs of (target_class_id, dict of pairs of (exclude_proportion, abs. difference confidence array))
-            For each pair of (target_class_id, exclude_proportion), the class with highest abs. difference is the predicted attack class
-            The Ground truth is target_class_id
-    """
-    conf_difference_dict = {}
+        return samples_dict
 
-    sorted_class_ids = sorted(du_confidence_per_class.keys())
-    du_confidence_array_per_class = np.array([du_confidence_per_class[class_id] for class_id in sorted_class_ids])
+    def _predict_sample(self, model: torch.nn.Module, sample: torch.Tensor, device: str) -> np.ndarray:
+        """Get model prediction for a single sample"""
+        with torch.no_grad():
+            normalized = self.normalizer(sample.to(device))
+            pred = model(normalized).softmax(dim=1).detach().cpu().numpy()
+            return pred.flatten()
 
-    for attack_class_id in all_dux_confidences_per_class:
+    def _evaluate_model_on_class(self, model_path: str, class_id: int) -> float:
+        """Evaluate model on samples from a specific class, return average target confidence"""
+        trainer = ModelTrainer(self.config)
+        trainer.load_model(model_path)
 
-        if attack_class_id not in conf_difference_dict:
-            conf_difference_dict[attack_class_id] = {}
-        else:
-            raise ValueError("Something is wrong with reporting!")
+        samples = self.probing_samples[class_id]
+        predictions = []
 
-        for exclude_prop in all_dux_confidences_per_class[attack_class_id]:
-            dux_confidence_per_class_dict = all_dux_confidences_per_class[attack_class_id][exclude_prop]
+        for sample in samples:
+            pred = self._predict_sample(trainer.model, sample, trainer.device)
+            predictions.append(pred)
 
-            dux_confidence_array_per_class = np.array(
-                [dux_confidence_per_class_dict[class_id] for class_id in sorted_class_ids])
+        avg_prediction = np.array(predictions).mean(axis=0)
+        target_confidence = avg_prediction[class_id]
 
-            conf_difference_dict[attack_class_id][exclude_prop] = np.abs(
-                dux_confidence_array_per_class - du_confidence_array_per_class)
+        del trainer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
-    return conf_difference_dict
+        return target_confidence, avg_prediction
+
+    def analyze_single_attack(self, attack_class_id: int, exclude_prop: float) -> AttackResult:
+        """Analyze a single unlearning attack scenario"""
+        # Get original model confidence
+        original_conf, original_pred = self._evaluate_model_on_class(
+            self.config["fine_tune"]["du_weights_load_path"],
+            attack_class_id
+        )
+
+        # Get unlearned model confidence
+        unlearned_model_name = f"finetuned_model_{attack_class_id}_{exclude_prop}.pth"
+        unlearned_model_path = Path(self.config["fine_tune"]["dux_weights_load_dir"]) / unlearned_model_name
+
+        if not unlearned_model_path.exists():
+            raise FileNotFoundError(f"Unlearned model not found: {unlearned_model_path}")
+
+        unlearned_conf, unlearned_pred = self._evaluate_model_on_class(
+            str(unlearned_model_path),
+            attack_class_id
+        )
+
+        # Calculate confidence differences across all classes
+        conf_differences = np.abs(unlearned_pred - original_pred)
+        max_diff_class = np.argmax(conf_differences)
+        max_diff_value = conf_differences[max_diff_class]
+
+        # Attack succeeds if target class has maximum difference
+        attack_success = (max_diff_class == attack_class_id)
+        confidence_drop = original_conf - unlearned_conf
+
+        return AttackResult(
+            target_class_id=attack_class_id,
+            exclude_proportion=exclude_prop,
+            original_confidence=original_conf,
+            unlearned_confidence=unlearned_conf,
+            confidence_drop=confidence_drop,
+            max_diff_class=max_diff_class,
+            max_diff_value=max_diff_value,
+            attack_success=attack_success
+        )
+
+    def run_full_analysis(self) -> List[AttackResult]:
+        """Run analysis on all configured attack scenarios"""
+        print("Starting unlearning attack analysis...")
+        print(f"Attack classes: {self.config['attack']['classes']}")
+        print(f"Exclude proportions: {self.config['attack']['proportion']}")
+        print()
+
+        results = []
+
+        for attack_class_id in self.config["attack"]["classes"]:
+            print(f"Analyzing attacks on class {attack_class_id}:")
+
+            for exclude_prop in self.config["attack"]["proportion"]:
+                try:
+                    result = self.analyze_single_attack(attack_class_id, exclude_prop)
+                    results.append(result)
+                    print(f"  {result}")
+
+                except FileNotFoundError as e:
+                    print(f"  Class {attack_class_id}, prop {exclude_prop}: SKIPPED ({e})")
+
+        self._print_summary(results)
+        return results
+
+    def _print_summary(self, results: List[AttackResult]):
+        """Print analysis summary"""
+        print(f"\n{'=' * 60}")
+        print("ATTACK ANALYSIS SUMMARY")
+        print(f"{'=' * 60}")
+
+        total_attacks = len(results)
+        successful_attacks = sum(1 for r in results if r.attack_success)
+        success_rate = (successful_attacks / total_attacks * 100) if total_attacks > 0 else 0
+
+        print(f"Total attacks: {total_attacks}")
+        print(f"Successful attacks: {successful_attacks}")
+        print(f"Overall success rate: {success_rate:.1f}%")
+
+        # Group by class for detailed analysis
+        by_class = {}
+        for result in results:
+            if result.target_class_id not in by_class:
+                by_class[result.target_class_id] = []
+            by_class[result.target_class_id].append(result)
+
+        print(f"\nPer-class analysis:")
+        for class_id in sorted(by_class.keys()):
+            class_results = by_class[class_id]
+            class_successes = sum(1 for r in class_results if r.attack_success)
+            class_rate = (class_successes / len(class_results) * 100)
+
+            print(f"  Class {class_id}: {class_successes}/{len(class_results)} "
+                  f"({class_rate:.1f}% success)")
+
+            # Show confidence drops by proportion
+            for result in sorted(class_results, key=lambda x: x.exclude_proportion):
+                print(f"    Prop {result.exclude_proportion}: "
+                      f"drop={result.confidence_drop:.4f}, "
+                      f"max_diff={result.max_diff_value:.4f}")
+
+    def save_results(self, results: List[AttackResult], filepath: str):
+        """Save attack results to file"""
+        with open(filepath, "wb") as f:
+            pickle.dump(results, f)
+        print(f"Results saved to {filepath}")
 
 
 def main():
+    """Main function to run attack analysis"""
     config_path = "configs/attack_config.yaml"
-    config = load_config(config_path)
-    probing_samples_dict = load_probing_samples(config["attack"]["probe_samples_path"])
 
-    # Load and evaluate original model (du)
-    du_trainer = ModelTrainer(config)
-    du_trainer.load_model(config["fine_tune"]["du_weights_load_path"])
-    du_conf_per_class_dict = evaluate_avg_confidence_per_class(du_trainer, probing_samples_dict)
+    analyzer = UnlearningAttackAnalyzer(config_path)
+    results = analyzer.run_full_analysis()
 
-    del du_trainer
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    dux_trainer = ModelTrainer(config)
-    all_dux_confidences = {}
-
-    for attack_class_id in config["attack"]["classes"]:
-
-        if attack_class_id not in all_dux_confidences:
-            all_dux_confidences[attack_class_id] = {}
-        else:
-            raise ValueError("Something is wrong here!")
-
-        for exclude_prop in config["attack"]["proportion"]:
-            dux_model_name = f"finetuned_model_{attack_class_id}_{exclude_prop}.pth"
-            dux_model_path = os.path.join(config["fine_tune"]["dux_weights_load_dir"], dux_model_name)
-
-            if not os.path.exists(dux_model_path):
-                raise FileNotFoundError(f"Model file not found: {dux_model_path}")
-
-            dux_trainer.load_model(dux_model_path)
-            dux_conf_per_class_dict = evaluate_avg_confidence_per_class(dux_trainer, probing_samples_dict)
-            all_dux_confidences[attack_class_id][exclude_prop] = dux_conf_per_class_dict
-
-    del dux_trainer
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-
-    conf_difference_dict = report_attack_results(du_conf_per_class_dict, all_dux_confidences)
-    print("Original model confidences per class:")
-    print(du_conf_per_class_dict)
-    print("\nConfidence differences (attack analysis):")
-    print(conf_difference_dict)
+    # Optionally save results
+    # analyzer.save_results(results, "attack_analysis_results.pkl")
 
 
 if __name__ == "__main__":
