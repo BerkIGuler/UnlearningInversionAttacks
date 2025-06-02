@@ -4,3 +4,4 @@ torchaudio
 tqdm
 numpy
 PyYAML
+matplotlib

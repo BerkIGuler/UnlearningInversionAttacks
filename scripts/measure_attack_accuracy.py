@@ -1,10 +1,11 @@
 import pickle
 import torch
 import numpy as np
-import os
 from pathlib import Path
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 
 from torchvision import transforms
 from src.utils import load_config
@@ -22,6 +23,9 @@ class AttackResult:
     exclude_proportion: float
     original_confidence: float
     unlearned_confidence: float
+    original_prediction: np.ndarray  # Full prediction vector
+    unlearned_prediction: np.ndarray  # Full prediction vector
+    confidence_differences: np.ndarray  # Signed differences (original - unlearned)
     confidence_drop: float
     max_diff_class: int
     max_diff_value: float
@@ -64,8 +68,8 @@ class UnlearningAttackAnalyzer:
             pred = model(normalized).softmax(dim=1).detach().cpu().numpy()
             return pred.flatten()
 
-    def _evaluate_model_on_class(self, model_path: str, class_id: int) -> float:
-        """Evaluate model on samples from a specific class, return average target confidence"""
+    def _evaluate_model_on_class(self, model_path: str, class_id: int) -> Tuple[float, np.ndarray]:
+        """Evaluate model on samples from a specific class, return average target confidence and full prediction"""
         trainer = ModelTrainer(self.config)
         trainer.load_model(model_path)
 
@@ -105,12 +109,13 @@ class UnlearningAttackAnalyzer:
             attack_class_id
         )
 
-        # Calculate confidence differences across all classes
-        conf_differences = np.abs(unlearned_pred - original_pred)
-        max_diff_class = np.argmax(conf_differences)
-        max_diff_value = conf_differences[max_diff_class]
+        # Calculate signed confidence differences (original - unlearned)
+        conf_differences = original_pred - unlearned_pred
+        abs_conf_differences = np.abs(conf_differences)
+        max_diff_class = np.argmax(abs_conf_differences)
+        max_diff_value = abs_conf_differences[max_diff_class]
 
-        # Attack succeeds if target class has maximum difference
+        # Attack succeeds if target class has maximum absolute difference
         attack_success = (max_diff_class == attack_class_id)
         confidence_drop = original_conf - unlearned_conf
 
@@ -119,6 +124,9 @@ class UnlearningAttackAnalyzer:
             exclude_proportion=exclude_prop,
             original_confidence=original_conf,
             unlearned_confidence=unlearned_conf,
+            original_prediction=original_pred,
+            unlearned_prediction=unlearned_pred,
+            confidence_differences=conf_differences,
             confidence_drop=confidence_drop,
             max_diff_class=max_diff_class,
             max_diff_value=max_diff_value,
@@ -149,7 +157,8 @@ class UnlearningAttackAnalyzer:
         self._print_summary(results)
         return results
 
-    def _print_summary(self, results: List[AttackResult]):
+    @staticmethod
+    def _print_summary(results: List[AttackResult]):
         """Print analysis summary"""
         print(f"\n{'=' * 60}")
         print("ATTACK ANALYSIS SUMMARY")
@@ -185,6 +194,105 @@ class UnlearningAttackAnalyzer:
                       f"drop={result.confidence_drop:.4f}, "
                       f"max_diff={result.max_diff_value:.4f}")
 
+    def create_visualizations(self, results: List[AttackResult], save_dir: str = "attack_visualizations"):
+        """Create comprehensive visualizations of attack results"""
+        save_path = Path(save_dir)
+        save_path.mkdir(exist_ok=True)
+
+        # Group results by exclude_proportion
+        by_proportion = {}
+        for result in results:
+            prop = result.exclude_proportion
+            if prop not in by_proportion:
+                by_proportion[prop] = []
+            by_proportion[prop].append(result)
+
+        # Create a figure for each exclude_proportion
+        for exclude_prop in sorted(by_proportion.keys()):
+            self._create_proportion_figure(by_proportion[exclude_prop], exclude_prop, save_path)
+
+        print(f"Visualizations saved to {save_path}")
+
+    @staticmethod
+    def _create_proportion_figure(results: List[AttackResult], exclude_prop: float, save_path: Path):
+        """Create a figure with subplots for each target class for a given exclude_proportion"""
+        # Group by target class and take the first result for each class (to handle duplicates)
+        by_target_class = {}
+        for result in results:
+            if result.target_class_id not in by_target_class:
+                by_target_class[result.target_class_id] = result
+
+        # Sort by target class ID
+        sorted_results = [by_target_class[class_id] for class_id in sorted(by_target_class.keys())]
+
+        print(f"Creating figure for exclude_prop {exclude_prop} with {len(sorted_results)} unique target classes")
+
+        # Create figure with subplots (2 rows, 5 columns for 10 classes)
+        fig, axes = plt.subplots(2, 5, figsize=(20, 8))
+
+        # Flatten axes for easier indexing
+        axes_flat = axes.flatten()
+
+        # CIFAR-10 class names for better labeling
+        class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                       'dog', 'frog', 'horse', 'ship', 'truck']
+
+        for i, result in enumerate(sorted_results):
+            if i >= 10:  # Safety check
+                print(f"Warning: More than 10 target classes found, skipping extras")
+                break
+
+            ax = axes_flat[i]
+            target_class = result.target_class_id
+            conf_diffs = result.confidence_differences
+
+            # Create bar chart
+            x_pos = np.arange(10)
+            bars = ax.bar(x_pos, conf_diffs, alpha=0.7)
+
+            # Highlight the target class bar
+            bars[target_class].set_color('red')
+            bars[target_class].set_alpha(1.0)
+
+            # Color other bars based on positive/negative
+            for j, bar in enumerate(bars):
+                if j != target_class:
+                    if conf_diffs[j] > 0:
+                        bar.set_color('lightblue')
+                    else:
+                        bar.set_color('lightcoral')
+
+            y_min = min(conf_diffs) - 0.001
+            y_max = max(conf_diffs) + 0.001
+            ax.set_ylim(y_min, y_max)
+
+            # Customize subplot
+            ax.set_title(f'Target: Class {target_class} ({class_names[target_class]})', fontweight='bold')
+            ax.set_xlabel('Class Index')
+            ax.set_ylabel('Confidence Difference')
+            ax.set_xticks(x_pos)
+            ax.set_xticklabels([str(i) for i in range(10)])
+            ax.grid(True, alpha=0.3, axis='y')
+            ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
+
+        # Create legend
+        red_patch = mpatches.Patch(color='red', label='Target Class')
+        blue_patch = mpatches.Patch(color='lightblue', label='Positive Difference')
+        coral_patch = mpatches.Patch(color='lightcoral', label='Negative Difference')
+        fig.legend(handles=[red_patch, blue_patch, coral_patch],
+                   loc='center', bbox_to_anchor=(0.5, 0.02), ncol=3)
+
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.1)
+
+        # Save figure
+        filename = f'confidence_differences_exclude_{exclude_prop}.png'
+        plt.savefig(save_path / filename, dpi=300, bbox_inches='tight')
+        plt.savefig(save_path / filename.replace('.png', '.pdf'), bbox_inches='tight')
+        plt.close()
+
+        print(f"Created visualization: {filename}")
+
     def save_results(self, results: List[AttackResult], filepath: str):
         """Save attack results to file"""
         with open(filepath, "wb") as f:
@@ -199,8 +307,7 @@ def main():
     analyzer = UnlearningAttackAnalyzer(config_path)
     results = analyzer.run_full_analysis()
 
-    # Optionally save results
-    # analyzer.save_results(results, "attack_analysis_results.pkl")
+    analyzer.create_visualizations(results)
 
 
 if __name__ == "__main__":
