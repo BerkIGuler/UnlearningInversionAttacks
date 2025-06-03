@@ -6,7 +6,7 @@ import os
 
 def main():
 
-    config_path = "configs/defence_config.yaml"
+    config_path = "configs/defense_config.yaml"
     config = load_config(config_path)
 
     pruning_kwargs = {
@@ -26,3 +26,7 @@ def main():
             config["prune"]["path_to_save_dir"],
             pruning_amount=prune_rate
             )
+
+
+if __name__ == "__main__":
+    main()
