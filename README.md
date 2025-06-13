@@ -68,7 +68,7 @@ For each pair of (attack class, proportion), the unlearned model `finetuned_mode
 
 ## Pruning as a Defense Mechanism
 
-Creates a pruned model from each unlearned model located in the unlearned model folder.
+The following script creates a pruned model from each unlearned model located in the unlearned model folder.
 
 ```bash
 python -m scripts.prune_models
@@ -78,3 +78,11 @@ Configuration details:
 - The `prune.rates` field from `defense_config.yaml` specifies which pruning rates will be applied to each model.
 
 The resulting pruned models are saved in a folder to be tested with the `measure_attack_accuracy` script later.
+
+
+## Measuring defense success
+After the unlearned and pruned models are saved, we can evaluate the effectiveness of pruning. To do that you can run
+
+```bash
+python -m scripts.measure_defense_success
+```
