@@ -281,12 +281,12 @@ def main():
     config_path = "configs/attack_config.yaml"
     pruned_models_dir = "outputs/pruned_models"
 
-    # sample_classes = [0, 2, 4, 6, 8]
-    sample_classes = [0, 2]
-    # sample_proportions = [0.003, 0.01, 0.1, 0.25, 0.5, 0.9]
-    sample_proportions = [0.01]
-    # prune_rates = [0.1, 0.25, 0.5, 0.9]
-    prune_rates = [0.5]
+    sample_classes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+    # sample_classes = [0, 2]
+    sample_proportions = [0.003, 0.01, 0.1, 0.25, 0.5, 0.9]
+    # sample_proportions = [0.01]
+    prune_rates = [0.1, 0.25, 0.5, 0.9]
+    # prune_rates = [0.5]
 
     evaluator = PruningDefenseEvaluator(config_path, pruned_models_dir)
     results = evaluator.run_evaluation(sample_classes, sample_proportions, prune_rates)
