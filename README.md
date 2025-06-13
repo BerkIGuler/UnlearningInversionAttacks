@@ -1,5 +1,11 @@
 # Reimplementation of Unlearning Inversion Attacks
 
+## Requirements
+Install the requirements with
+```bash
+pip install -r requirements.txt
+```
+
 ## Training a Model on Public Dataset
 
 The setup considered in this paper assumes an initial pretrained model for unlearning experiments. We pretrain the same convolutional network on CIFAR-10 with an 0.8/0.2 train/validation split. To start training with the default parameters in `configs/training_config.yaml`:
