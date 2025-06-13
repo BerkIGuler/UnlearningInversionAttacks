@@ -30,12 +30,10 @@ class ModelPruner:
         """
         parameters_to_prune = []
 
-        # Collect all Conv2d and Linear layers
         for module in model.modules():
             if isinstance(module, (torch.nn.Conv2d, torch.nn.Linear)):
                 parameters_to_prune.append((module, 'weight'))
 
-        # Apply global unstructured pruning
         prune.global_unstructured(
             parameters_to_prune,
             pruning_method=prune.L1Unstructured,
@@ -72,7 +70,6 @@ class ModelPruner:
         model = self.model_class(**self.model_kwargs)
         checkpoint = torch.load(checkpoint_path, map_location='cpu')
 
-        # Handle different checkpoint formats
         if isinstance(checkpoint, dict):
             if 'model_state_dict' in checkpoint:
                 model.load_state_dict(checkpoint['model_state_dict'])
@@ -97,7 +94,6 @@ class ModelPruner:
         """
         sparsity, total_params, zero_params = self.get_sparsity(model)
 
-        # Create new checkpoint
         pruned_checkpoint = {
             'model_state_dict': model.state_dict(),
             'pruning_amount': pruning_amount,
@@ -106,7 +102,6 @@ class ModelPruner:
             'zero_params': zero_params
         }
 
-        # Preserve original metadata
         if isinstance(checkpoint_dict, dict):
             for key in checkpoint_dict:
                 if key not in ['model_state_dict', 'state_dict']:
@@ -134,13 +129,10 @@ class ModelPruner:
         if verbose:
             print(f"Pruning {checkpoint_path.name} with {pruning_amount:.0%} sparsity...")
 
-        # Load model
         model, checkpoint_dict = self.load_checkpoint(checkpoint_path)
 
-        # Apply pruning
         self.prune_model(model, pruning_amount)
 
-        # Save pruned model
         sparsity, total_params, zero_params = self.save_checkpoint(
             model, checkpoint_dict, output_path, pruning_amount
         )

@@ -35,7 +35,6 @@ class ModelTrainer:
                     class_correct[label] += (predicted[i] == targets[i]).item()
                     class_total[label] += 1
 
-        # Calculate per-class accuracy
         class_accuracies = {}
         overall_correct = sum(class_correct)
         overall_total = sum(class_total)
@@ -80,13 +79,12 @@ class ModelTrainer:
             avg_loss = running_loss / len(train_loader)
             print(f"Epoch {epoch + 1}: Loss = {avg_loss:.4f}")
 
-            # Evaluate on validation set every eval_every_n epochs
             if (epoch + 1) % eval_every_n == 0:
                 accuracies = self.evaluate_model(val_loader)
                 print(f"Validation Results after Epoch {epoch + 1}:")
                 for class_name, accuracy in accuracies.items():
                     print(f"  {class_name}: {accuracy:.4f}")
-                self.model.train()  # Switch back to training mode
+                self.model.train()
 
             if scheduler:
                 scheduler.step()
@@ -117,13 +115,12 @@ class ModelTrainer:
             avg_loss = running_loss / len(train_loader)
             print(f"Fine-tune Epoch {epoch + 1}: Loss = {avg_loss:.4f}")
 
-            # Evaluate on validation set every eval_every_n epochs
             if (epoch + 1) % eval_every_n == 0:
                 accuracies = self.evaluate_model(val_loader)
                 print(f"Validation Results after Fine-tune Epoch {epoch + 1}:")
                 for class_name, accuracy in accuracies.items():
                     print(f"  {class_name}: {accuracy:.4f}")
-                self.model.train()  # Switch back to training mode
+                self.model.train()
 
         return self.model
 

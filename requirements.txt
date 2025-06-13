@@ -1,7 +1,7 @@
 torch
 torchvision
-torchaudio
 tqdm
 numpy
 PyYAML
 matplotlib
+adversarial-robustness-toolbox

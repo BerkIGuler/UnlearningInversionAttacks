@@ -12,7 +12,6 @@ def main():
     seed = config.get("seed", 233)
     set_random_seed(seed)
 
-    # Load CIFAR-10 in unlearning setting
     D0_loader, Du_loader, DuX_loader, X_loader, val_loader = load_cifar10(
         data_path=config["data"]["path"],
         batch_size=config["train"]["batch_size"],
@@ -27,10 +26,8 @@ def main():
     os.makedirs(config["fine_tune"]["model_save_folder"], exist_ok=True)
 
 
-    # Create trainer
     trainer = ModelTrainer(config)
 
-    # --- Train on D₀ ---
     trainer.train_model(
         train_loader=D0_loader,
         val_loader=val_loader,
@@ -40,7 +37,7 @@ def main():
         scheduler=True
     )
     trainer.save_model(os.path.join(config["train"]["model_save_folder"],"pretrained.pth"))
-    print("✅ Saved pretrained model")
+    print("Saved pretrained model")
 
 if __name__ == "__main__":
     main()

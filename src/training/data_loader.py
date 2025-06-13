@@ -47,24 +47,19 @@ def load_cifar10(
             - X_loader (DataLoader or None): Excluded samples for attack evaluation, or None if no exclusion
             - test_loader (DataLoader): CIFAR-10 test data loader
     """
-    # Train and test transforms
     transform_train = get_transforms(augment=augment)
     transform_test = get_transforms(augment=False)
 
-    # Load the full CIFAR-10 training dataset
     full_train = datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform_train)
     test_set = datasets.CIFAR10(root=data_path, train=False, download=True, transform=transform_test)
 
-    # Get sizes to split D0 and Du
     total_len  = len(full_train)
     D0_len = int(public_split * total_len)
     Du_len = total_len - D0_len
 
-    #split the full_train dataset into D0 and Du
     generator = torch.Generator().manual_seed(seed)
     D0, Du = random_split(full_train, [D0_len, Du_len], generator=generator)
 
-    #create loaders
     D0_loader = DataLoader(D0, batch_size=batch_size, shuffle=True, num_workers=2)
     Du_loader = DataLoader(Du, batch_size=batch_size, shuffle=True, num_workers=2)
     test_loader = DataLoader(test_set, batch_size=batch_size, shuffle=False, num_workers=2)
@@ -72,7 +67,6 @@ def load_cifar10(
     DuX_loader = None
     X_loader = None
 
-    # Subsample Du into DuX and X
     if exclude_class is not None and exclude_prop > 0:
         Du_targets = [Du.dataset[Du.indices[i]][1] for i in range(len(Du))]
         class_indices = [i for i, label in enumerate(Du_targets) if label == exclude_class]

@@ -38,7 +38,6 @@ class PruningDefenseEvaluator:
         self.pruned_models_dir = Path(pruned_models_dir)
         self.normalizer = transforms.Normalize(CIFAR10_MEAN, CIFAR10_STD)
 
-        # Load test data and probing samples
         _, _, _, _, self.test_loader = load_cifar10(
             batch_size=128, augment=False
         )
@@ -66,35 +65,27 @@ class PruningDefenseEvaluator:
         if isinstance(checkpoint, dict) and 'model_state_dict' in checkpoint:
             state_dict = checkpoint['model_state_dict']
 
-            # Check if this is a pruned model (has weight_orig and weight_mask)
             has_pruning_masks = any('weight_orig' in key for key in state_dict.keys())
 
             if has_pruning_masks:
-                # Convert pruned weights back to regular weights
                 converted_state_dict = {}
                 for key, value in state_dict.items():
                     if key.endswith('_orig'):
-                        # Get the base key (remove _orig suffix)
                         base_key = key[:-5]  # Remove '_orig'
                         mask_key = base_key + '_mask'
 
                         if mask_key in state_dict:
-                            # Apply mask to original weights
                             masked_weight = value * state_dict[mask_key]
                             converted_state_dict[base_key] = masked_weight
                         else:
-                            # No mask found, use original weight
                             converted_state_dict[base_key] = value
                     elif not key.endswith('_mask'):
-                        # Keep non-weight parameters as is
                         converted_state_dict[key] = value
 
                 trainer.model.load_state_dict(converted_state_dict)
             else:
-                # Regular checkpoint format
                 trainer.model.load_state_dict(state_dict)
         else:
-            # Handle original format (fallback to trainer's method)
             trainer.load_model(model_path)
             return trainer
 
@@ -127,7 +118,7 @@ class PruningDefenseEvaluator:
 
     def _evaluate_attack_success(self, original_model_path: str, target_model_path: str, class_id: int) -> bool:
         """Check if attack succeeds by comparing confidence differences"""
-        # Get original model confidence
+
         trainer = self._load_model(original_model_path)
 
         original_confs = []
@@ -140,7 +131,6 @@ class PruningDefenseEvaluator:
         original_pred = np.array(original_confs).mean(axis=0)
         del trainer
 
-        # Get target model confidence
         trainer = self._load_model(target_model_path)
 
         target_confs = []
@@ -164,7 +154,7 @@ class PruningDefenseEvaluator:
 
     def evaluate_model_pair(self, class_id: int, proportion: float, prune_rate: float) -> DefenseResult:
         """Evaluate a single original/pruned model pair"""
-        # Construct paths
+
         original_name = f"finetuned_model_{class_id}_{proportion}.pth"
         pruned_name = f"pruned_{prune_rate}_{original_name}"
 
@@ -172,11 +162,9 @@ class PruningDefenseEvaluator:
         pruned_path = self.pruned_models_dir / pruned_name
         du_path = self.config["fine_tune"]["du_weights_load_path"]
 
-        # Evaluate accuracies
         original_acc = self._evaluate_accuracy(str(original_path))
         pruned_acc = self._evaluate_accuracy(str(pruned_path))
 
-        # Evaluate attack success
         original_attack = self._evaluate_attack_success(du_path, str(original_path), class_id)
         pruned_attack = self._evaluate_attack_success(du_path, str(pruned_path), class_id)
 
@@ -222,7 +210,6 @@ class PruningDefenseEvaluator:
         save_path = Path(save_dir)
         save_path.mkdir(exist_ok=True)
 
-        # Group results by prune rate
         by_prune_rate = {}
         for result in results:
             if result.prune_rate not in by_prune_rate:
@@ -231,7 +218,6 @@ class PruningDefenseEvaluator:
 
         prune_rates = sorted(by_prune_rate.keys())
 
-        # Calculate averages for each prune rate
         avg_accuracy_drop = []
         defense_success_rate = []
 
@@ -240,10 +226,8 @@ class PruningDefenseEvaluator:
             avg_accuracy_drop.append(np.mean([r.accuracy_drop for r in rate_results]))
             defense_success_rate.append(np.mean([r.defense_success for r in rate_results]) * 100)
 
-        # Create plots
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-        # Plot 1: Accuracy Drop vs Prune Rate
         ax1.bar(range(len(prune_rates)), avg_accuracy_drop, alpha=0.7, color='red')
         ax1.set_xlabel('Pruning Rate')
         ax1.set_ylabel('Average Accuracy Drop')
@@ -252,7 +236,6 @@ class PruningDefenseEvaluator:
         ax1.set_xticklabels([f'{rate:.1f}' for rate in prune_rates])
         ax1.grid(True, alpha=0.3)
 
-        # Plot 2: Defense Success Rate vs Prune Rate
         ax2.bar(range(len(prune_rates)), defense_success_rate, alpha=0.7, color='green')
         ax2.set_xlabel('Pruning Rate')
         ax2.set_ylabel('Defense Success Rate (%)')
@@ -266,7 +249,6 @@ class PruningDefenseEvaluator:
         plt.savefig(save_path / 'pruning_defense_summary.pdf', bbox_inches='tight')
         plt.close()
 
-        # Print summary statistics
         print(f"\n{'=' * 50}")
         print("PRUNING DEFENSE SUMMARY")
         print(f"{'=' * 50}")
@@ -282,11 +264,8 @@ def main():
     pruned_models_dir = "outputs/pruned_models"
 
     sample_classes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
-    # sample_classes = [0, 2]
     sample_proportions = [0.003, 0.01, 0.1, 0.25, 0.5, 0.9]
-    # sample_proportions = [0.01]
     prune_rates = [0.1, 0.25, 0.5, 0.9]
-    # prune_rates = [0.5]
 
     evaluator = PruningDefenseEvaluator(config_path, pruned_models_dir)
     results = evaluator.run_evaluation(sample_classes, sample_proportions, prune_rates)

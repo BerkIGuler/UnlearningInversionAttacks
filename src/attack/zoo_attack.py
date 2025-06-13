@@ -76,17 +76,15 @@ class ZooAttack(EvasionAttack):
         self.variable_h = variable_h
         self.verbose = verbose
 
-        # Initialize some internal variables
         self._init_size = 32
         if self.abort_early:
             self._early_stop_iters = self.max_iter // 10 if self.max_iter >= 10 else self.max_iter
 
-        # Initialize noise variable to zero
         if self.input_is_feature_vector:
             self.use_resize = False
             self.use_importance = False
             if self.verbose:
-                print(  # pragma: no cover
+                print(
                     "Disable resizing and importance sampling because feature vector input has been detected."
                 )
 
@@ -128,11 +126,9 @@ class ZooAttack(EvasionAttack):
         if y is not None:
             y = check_and_transform_label_format(y, nb_classes=self.estimator.nb_classes)
 
-        # No labels provided, use model prediction as correct class
         if y is None:
             y = get_labels_np_array(self.estimator.predict(x, batch_size=self.batch_size))
 
-        # Compute adversarial examples with implicit batching
         nb_batches = int(np.ceil(x.shape[0] / float(self.batch_size)))
         x_adv_list = []
         loweset_loss_list = []
@@ -145,12 +141,10 @@ class ZooAttack(EvasionAttack):
             loweset_loss_list.append(loweset_loss)
         x_adv = np.vstack(x_adv_list)
 
-        # Apply clip
         if self.estimator.clip_values is not None:
             clip_min, clip_max = self.estimator.clip_values
             np.clip(x_adv, clip_min, clip_max, out=x_adv)
 
-        # Log success rate of the ZOO attack
         if self.verbose:
             print(
                 "Success rate of ZOO attack: %.2f%%",
@@ -180,7 +174,6 @@ class ZooAttack(EvasionAttack):
             self._current_noise = np.zeros(x_batch.shape, dtype=ART_NUMPY_DTYPE)
         x_adv = x_orig.copy()
 
-        # Initialize best distortions, best changed labels and best attacks
         loweset_loss = np.array([np.inf] * x_batch.shape[0])
 
         best_attack = x_orig.copy()
@@ -197,7 +190,7 @@ class ZooAttack(EvasionAttack):
 
             tqdm_range.set_description(f'Loss: {loss[0]:2.4f}, prev: {prev_loss[0]:2.4f}, best:{loweset_loss[0]:2.4f}')
             tqdm_range.refresh()
-            # Abort early if no improvement is obtained
+
             if self.abort_early and iter_ % self._early_stop_iters == 0:
                 if loss > 0.9999 * prev_loss:
                     break
@@ -206,11 +199,9 @@ class ZooAttack(EvasionAttack):
         return best_attack, loweset_loss
 
     def _optimizer(self, x: np.ndarray) -> np.ndarray:
-        # Variation of input for computing loss, same as in original implementation
         coord_batch = np.repeat(self._current_noise, 2 * self.nb_parallel, axis=0)
         coord_batch = coord_batch.reshape(2 * self.nb_parallel * self._current_noise.shape[0], -1)
 
-        # Sample indices to prioritize for optimization
         if self.use_importance and np.unique(self._sample_prob).size != 1:
             try:
                 indices = (
@@ -251,12 +242,10 @@ class ZooAttack(EvasionAttack):
             except Exception as e:
                 print(e)
 
-        # Create the batch of modifications to run
         for i in range(self.nb_parallel * self._current_noise.shape[0]):
             coord_batch[2 * i, indices[i]] += self.variable_h
             coord_batch[2 * i + 1, indices[i]] -= self.variable_h
 
-        # Compute loss for all samples and coordinates, then optimize
         expanded_x = np.repeat(x, 2 * self.nb_parallel, axis=0).reshape((-1,) + x.shape[1:])
         _, loss = self._loss(
             expanded_x + coord_batch.reshape(expanded_x.shape),
@@ -307,10 +296,8 @@ class ZooAttack(EvasionAttack):
         """
         beta1, beta2 = 0.9, 0.999
 
-        # Estimate grads from loss variation (constant `h` from the paper is fixed to .0001)
         grads = np.array([(losses[i] - losses[i + 1]) / (2 * self.variable_h) for i in range(0, len(losses), 2)])
 
-        # ADAM update
         mean[index] = beta1 * mean[index] + (1 - beta1) * grads
         var[index] = beta2 * var[index] + (1 - beta2) * grads ** 2
 
@@ -327,16 +314,15 @@ class ZooAttack(EvasionAttack):
         return current_noise.reshape(orig_shape)
 
     def _reset_adam(self, nb_vars: int, indices: Optional[np.ndarray] = None) -> None:
-        # If variables are already there and at the right size, reset values
         if self.adam_mean is not None and self.adam_mean.size == nb_vars:
             if indices is None:
                 self.adam_mean.fill(0)
-                self.adam_var.fill(0)  # type: ignore
-                self.adam_epochs.fill(1)  # type: ignore
+                self.adam_var.fill(0)
+                self.adam_epochs.fill(1)
             else:
                 self.adam_mean[indices] = 0
-                self.adam_var[indices] = 0  # type: ignore
-                self.adam_epochs[indices] = 1  # type: ignore
+                self.adam_var[indices] = 0
+                self.adam_epochs[indices] = 1
         else:
 
             self.adam_mean = np.zeros(nb_vars, dtype=ART_NUMPY_DTYPE)
@@ -347,7 +333,6 @@ class ZooAttack(EvasionAttack):
         dims = list(prev_noise.shape)
         channel_index = 1 if self.estimator.channels_first else 3
 
-        # Double size if needed
         if double:
             dims = [2 * size if i not in [0, channel_index] else size for i, size in enumerate(dims)]
 
