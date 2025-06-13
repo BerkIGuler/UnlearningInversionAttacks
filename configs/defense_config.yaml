@@ -1,0 +1,9 @@
+prune:
+  path_to_model_dir: "outputs/private_unlearned"
+  path_to_save_dir: "outputs/pruned_models"
+  rates: [0.1, 0.25, 0.5, 0.9]
+
+model:
+  width: 64
+  num_classes: 10
+  num_channels: 3

@@ -23,8 +23,8 @@ class AttackResult:
     exclude_proportion: float
     original_confidence: float
     unlearned_confidence: float
-    original_prediction: np.ndarray  # Full prediction vector
-    unlearned_prediction: np.ndarray  # Full prediction vector
+    original_prediction: np.ndarray
+    unlearned_prediction: np.ndarray
     confidence_differences: np.ndarray  # Signed differences (original - unlearned)
     confidence_drop: float
     max_diff_class: int
@@ -91,13 +91,11 @@ class UnlearningAttackAnalyzer:
 
     def analyze_single_attack(self, attack_class_id: int, exclude_prop: float) -> AttackResult:
         """Analyze a single unlearning attack scenario"""
-        # Get original model confidence
         original_conf, original_pred = self._evaluate_model_on_class(
             self.config["fine_tune"]["du_weights_load_path"],
             attack_class_id
         )
 
-        # Get unlearned model confidence
         unlearned_model_name = f"finetuned_model_{attack_class_id}_{exclude_prop}.pth"
         unlearned_model_path = Path(self.config["fine_tune"]["dux_weights_load_dir"]) / unlearned_model_name
 
@@ -109,7 +107,6 @@ class UnlearningAttackAnalyzer:
             attack_class_id
         )
 
-        # Calculate signed confidence differences (original - unlearned)
         conf_differences = original_pred - unlearned_pred
         abs_conf_differences = np.abs(conf_differences)
         max_diff_class = np.argmax(abs_conf_differences)
@@ -172,7 +169,6 @@ class UnlearningAttackAnalyzer:
         print(f"Successful attacks: {successful_attacks}")
         print(f"Overall success rate: {success_rate:.1f}%")
 
-        # Group by class for detailed analysis
         by_class = {}
         for result in results:
             if result.target_class_id not in by_class:
@@ -188,7 +184,6 @@ class UnlearningAttackAnalyzer:
             print(f"  Class {class_id}: {class_successes}/{len(class_results)} "
                   f"({class_rate:.1f}% success)")
 
-            # Show confidence drops by proportion
             for result in sorted(class_results, key=lambda x: x.exclude_proportion):
                 print(f"    Prop {result.exclude_proportion}: "
                       f"drop={result.confidence_drop:.4f}, "
@@ -199,7 +194,6 @@ class UnlearningAttackAnalyzer:
         save_path = Path(save_dir)
         save_path.mkdir(exist_ok=True)
 
-        # Group results by exclude_proportion
         by_proportion = {}
         for result in results:
             prop = result.exclude_proportion
@@ -207,7 +201,6 @@ class UnlearningAttackAnalyzer:
                 by_proportion[prop] = []
             by_proportion[prop].append(result)
 
-        # Create a figure for each exclude_proportion
         for exclude_prop in sorted(by_proportion.keys()):
             self._create_proportion_figure(by_proportion[exclude_prop], exclude_prop, save_path)
 
@@ -216,29 +209,24 @@ class UnlearningAttackAnalyzer:
     @staticmethod
     def _create_proportion_figure(results: List[AttackResult], exclude_prop: float, save_path: Path):
         """Create a figure with subplots for each target class for a given exclude_proportion"""
-        # Group by target class and take the first result for each class (to handle duplicates)
         by_target_class = {}
         for result in results:
             if result.target_class_id not in by_target_class:
                 by_target_class[result.target_class_id] = result
 
-        # Sort by target class ID
         sorted_results = [by_target_class[class_id] for class_id in sorted(by_target_class.keys())]
 
         print(f"Creating figure for exclude_prop {exclude_prop} with {len(sorted_results)} unique target classes")
 
-        # Create figure with subplots (2 rows, 5 columns for 10 classes)
         fig, axes = plt.subplots(2, 5, figsize=(20, 8))
 
-        # Flatten axes for easier indexing
         axes_flat = axes.flatten()
 
-        # CIFAR-10 class names for better labeling
         class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer',
                        'dog', 'frog', 'horse', 'ship', 'truck']
 
         for i, result in enumerate(sorted_results):
-            if i >= 10:  # Safety check
+            if i >= 10:
                 print(f"Warning: More than 10 target classes found, skipping extras")
                 break
 
@@ -246,15 +234,12 @@ class UnlearningAttackAnalyzer:
             target_class = result.target_class_id
             conf_diffs = result.confidence_differences
 
-            # Create bar chart
             x_pos = np.arange(10)
             bars = ax.bar(x_pos, conf_diffs, alpha=0.7)
 
-            # Highlight the target class bar
             bars[target_class].set_color('red')
             bars[target_class].set_alpha(1.0)
 
-            # Color other bars based on positive/negative
             for j, bar in enumerate(bars):
                 if j != target_class:
                     if conf_diffs[j] > 0:
@@ -266,7 +251,6 @@ class UnlearningAttackAnalyzer:
             y_max = max(conf_diffs) + 0.001
             ax.set_ylim(y_min, y_max)
 
-            # Customize subplot
             ax.set_title(f'Target: Class {target_class} ({class_names[target_class]})', fontweight='bold')
             ax.set_xlabel('Class Index')
             ax.set_ylabel('Confidence Difference')
@@ -275,7 +259,6 @@ class UnlearningAttackAnalyzer:
             ax.grid(True, alpha=0.3, axis='y')
             ax.axhline(y=0, color='black', linestyle='-', alpha=0.3)
 
-        # Create legend
         red_patch = mpatches.Patch(color='red', label='Target Class')
         blue_patch = mpatches.Patch(color='lightblue', label='Positive Difference')
         coral_patch = mpatches.Patch(color='lightcoral', label='Negative Difference')
@@ -285,7 +268,6 @@ class UnlearningAttackAnalyzer:
         plt.tight_layout()
         plt.subplots_adjust(bottom=0.1)
 
-        # Save figure
         filename = f'confidence_differences_exclude_{exclude_prop}.png'
         plt.savefig(save_path / filename, dpi=300, bbox_inches='tight')
         plt.savefig(save_path / filename.replace('.png', '.pdf'), bbox_inches='tight')

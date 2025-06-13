@@ -8,7 +8,6 @@ from src.utils import load_config
 
 
 def main():
-    # Load config
     config_path = "configs/finetune_Dux_config.yaml"
     config = load_config(config_path)
     seed = config.get("seed", 233)
@@ -19,7 +18,6 @@ def main():
 
     os.makedirs(config["fine_tune"]["model_save_folder"], exist_ok=True)
 
-    # Progress tracking
     total_experiments = len(classes_to_attack) * len(attack_proportions)
     current = 0
     successful_experiments = 0
@@ -33,7 +31,6 @@ def main():
             print(f"{'=' * 60}")
 
             try:
-                # Load CIFAR-10 in unlearning setting
                 _, _, DuX_loader, _, val_loader = load_cifar10(
                     data_path=config["data"]["path"],
                     batch_size=config["fine_tune"]["batch_size"],
@@ -44,12 +41,10 @@ def main():
                     exclude_prop=prop
                 )
 
-                # Create trainer
                 trainer = ModelTrainer(config)
 
                 trainer.load_model(config["fine_tune"]["weights_load_path"])
 
-                # --- finetune on D_u ---
                 print(f"Starting fine-tuning for class {attack_class_id} with proportion {prop}...")
                 trainer.fine_tune_model(
                     train_loader=DuX_loader,
@@ -66,13 +61,12 @@ def main():
                 print(f"✅ Saved finetuned model to {model_save_path}")
                 successful_experiments += 1
 
-                # Memory cleanup
                 del trainer
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
 
             except Exception as e:
-                print(f"❌ Error in experiment {current}: {str(e)}")
+                print(f"Error in experiment {current}: {str(e)}")
                 failed_experiments.append({
                     'experiment': current,
                     'class_id': attack_class_id,
@@ -80,7 +74,6 @@ def main():
                     'error': str(e)
                 })
 
-                # Clean up memory even if experiment failed
                 try:
                     if 'trainer' in locals():
                         del trainer
@@ -92,7 +85,6 @@ def main():
                 print(f"Continuing with remaining experiments...")
                 continue
 
-    # Final summary
     print(f"\n{'=' * 60}")
     print("EXPERIMENT SUMMARY")
     print(f"{'=' * 60}")
@@ -106,7 +98,7 @@ def main():
             print(f"  - Experiment {failure['experiment']}: class={failure['class_id']}, "
                   f"prop={failure['proportion']} | Error: {failure['error']}")
     else:
-        print("🎉 All experiments completed successfully!")
+        print("All experiments completed successfully!")
 
 
 if __name__ == "__main__":
